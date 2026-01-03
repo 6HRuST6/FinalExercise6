@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"html/template"
 	"io"
 	"net/http"
@@ -12,20 +13,39 @@ import (
 	"github.com/Yandex-Practicum/go1fl-sprint6-final/internal/service"
 )
 
+func indexPath() (string, error) {
+
+	p := "index.html"
+	if _, err := os.Stat(p); err == nil {
+		return p, nil
+	}
+
+	p = filepath.Join("..", "index.html")
+	if _, err := os.Stat(p); err == nil {
+		return p, nil
+	}
+
+	return "", errors.New("index.html not found")
+}
+
 func IndexHandler(w http.ResponseWriter, r *http.Request) {
-	data, err := os.ReadFile("../index.html")
+	data, err := indexPath()
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(data)
+	http.ServeFile(w, r, data)
 }
 
 func UploadHandler(w http.ResponseWriter, r *http.Request) {
-	_, err := template.ParseFiles("../index.html")
+	p, err := indexPath()
 	if err != nil {
+		http.Error(w, "index not found", http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := template.ParseFiles(p); err != nil {
 		http.Error(w, "cannot parse template", http.StatusInternalServerError)
 		return
 	}
@@ -43,11 +63,15 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	st, err := service.Conv(string(data))
+	in := strings.TrimSpace(string(data))
+
+	out, err := service.Conv(in)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	out = strings.TrimSpace(out)
 
 	ext := filepath.Ext(header.Filename)
 	name := time.Now().UTC().String() + ext
@@ -60,12 +84,11 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer outFile.Close()
 
-	_, err = outFile.WriteString(st)
-	if err != nil {
+	if _, err := outFile.WriteString(out); err != nil {
 		http.Error(w, "cannot write file", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte(st))
+	_, _ = w.Write([]byte(in + "\n" + out))
 }
